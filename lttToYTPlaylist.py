@@ -83,33 +83,41 @@ def get_authenticated_service():
 	  http=credentials.authorize(httplib2.Http()))
 
 
-
-
 #User-defined variables
+
 #The maximum the bot will search is the top [depthLimit] posts. Default is 25
 depthLimit=25
- 
+
 #The subreddit it will search for videos. Default is /r/listentothis
 searchSubreddit = "listentothis"
+
 #The text it will match. Default is *youtube.com/*. Can have more than one option.
 textToMatch = ["youtube.com/"]
+
 #The playlist it will add to by ID.
-defaultPlaylistID = 'PL0123Jmy2GdkAROYNrbti51KtYSohr-R0'
-playlistID = 'PL0123Jmy2GdkAROYNrbti51KtYSohr-R0'
+global defaultPlaylistID
+defaultPlaylistID  = 'PL0123Jmy2GdkAROYNrbti51KtYSohr-R0'
 
 def addLink(text):
-	#When a link is first added to the youtube playlist, store the link in a local text file.
+
+	#When a link is first added to the youtube playlist, store the link in a local text file, "alreadyAdded".
 	f = open('alreadyAdded', 'a')
 	f.write(text + "\n")
 
 def alreadyAdded(text):
-	#If the link is not in the local text file, return false. If it is, return true.
-	if text in open("alreadyAdded").read():
-		return True
-	else:
+
+	#If the link is in the local text file "alreadyAdded" return true. If not, false. Also check the file exists.	
+	try:
+		if text in open("alreadyAdded").read():
+			return True
+		else:
+			return False
+	except:
+		f = open('alreadyAdded', 'a')
 		return False
 
 def getPlaylistID():
+
 	#When the bot is starting up, obtain the current ID from a text file.
 	f = open('playlistIDs', 'r')
 	line = None
@@ -118,51 +126,61 @@ def getPlaylistID():
 	return line
 
 def newPlaylistID():
+
 	#When the current playlist is full, create a new one and return it
 	return None
 
-def writePlaylistID():
+def writePlaylistID(playlistID):
+
 	#When the bot is done a cycle or whatever, write out the current playlistID to a text file.
-	#First check if the current ID is also the last ID in the file. If it is, leave it.
-	#If not, write the ID.
 	f = open('playlistIDs', 'w')
 	f.write(playlistID + '\n')
 
 def botCycle(r):
+
     #Runs the bot's logic. Scans top posts for unadded posts, then adds them to the YT playlist.
 	while True:
 		try:
 			playlistID = getPlaylistID()
 		except:
-		#If you cannot get the ID from file, leave the default.
-			pass
+
+		#If you cannot get the playlistID from the playlist ID file, leave the default.
+			playlistID = defaultPlaylistID
 		subreddit = r.get_subreddit(searchSubreddit)
+
 		#Search depthLimit links and round them up if they're youtube
 		for link in subreddit.get_hot(limit=depthLimit):
 			url = link.url
+
 			#Filter out non YT links, such as self-posts/announcements
 			isMatch = any(string in url for string in textToMatch)
 			if isMatch and not alreadyAdded(url):
+
 				#Strip the id from the link to use in YT API
 				videoID = extractId(url)
+
 				if videoID is None:
 					print("=========")
 					print("Can not extract the id from {}".format(url))
 					print("=========")
-				if videoID is not None:
+				else:
+
 					#Login to YT and add the linked video to the playlist
 					print("Adding {} to your playlist.".format(url))
 					addToYTPlaylist(youtube, videoID, playlistID)
+
 					#print("Problem with getting the ID, or playlist ID.")
 					addLink(url)
 			if not isMatch:
+
 				#If it doesn't meet the url(either weird YT link or another site)
 				print("Not adding {}. Wrong form/site.".format(url))
 		print("Cycled through top posts, all done.\n\n")
-		writePlaylistID()
+		writePlaylistID(playlistID)
 		time.sleep(1800)
 
 def extractId(url):
+
 	#Given a youtube URL, extracts the id for the video and returns it.
 	try:
 		url_data = urlparse.urlparse(url)
@@ -173,6 +191,7 @@ def extractId(url):
 		return None
 
 def addToYTPlaylist(youtube, videoID, playlistID):
+
 	#Given video and playlist, adds the video to the playlist
 	add_video_request=youtube.playlistItems().insert(
 		part="snippet",
@@ -190,5 +209,5 @@ def addToYTPlaylist(youtube, videoID, playlistID):
 
 #Start youtube and reddit apis, and runs the bot.
 youtube = get_authenticated_service()
-r = praw.Reddit(user_agent = "LTT To YT Playlist Bot v 1.0 /u/BlueFireAt")
+r = praw.Reddit(user_agent = "LTT To YT Playlist Bot v 1.1 /u/BlueFireAt")
 botCycle(r)
