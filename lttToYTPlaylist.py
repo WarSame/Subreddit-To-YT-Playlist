@@ -75,13 +75,13 @@ def get_authenticated_service(args):
 # User-defined variables
 
 # The maximum the bot will search is the top [depthLimit] posts. Default is 25
-depthLimit = 25
+depth_limit = 25
 
 # The subreddit it will search for videos. Default is /r/listentothis
-searchSubreddit = "listentothis"
+search_subreddit = "listentothis"
 
 # The text it will match. Default is *youtube.com/*. Can have more than one option.
-textToMatch = ["youtube.com/", "youtu.be/"]
+text_to_match = ["youtube.com/", "youtu.be/"]
 
 # The playlist it will add to by ID.
 default_playlist_id = 'PL0123Jmy2GdkAROYNrbti51KtYSohr-R0'
@@ -91,59 +91,39 @@ def add_link(text):
     # When a link is first added to the youtube playlist, store the link in a local text file, "alreadyAdded".
     f = open('alreadyAdded', 'a')
     f.write(text + "\n")
+    return
 
 
-def already_added(text):
+def already_added(link):
     # If the link is in the local text file "alreadyAdded" return true. If not, false. Also check the file exists.
     try:
-        if text in open("alreadyAdded").read():
+        if link in open("alreadyAdded", 'r').read():
             return True
         else:
             return False
-    except:
-        f = open('alreadyAdded', 'a')
+    except IOError:
+        open('alreadyAdded', 'a')
         return False
-
-
-def get_playlist_id():
-    # When the bot is starting up, obtain the current ID from a text file.
-    f = open('playlistIDs', 'r')
-    line = None
-    for line in f:
-        pass
-    return line
-
-
-'''
-def write_playlist_id(playlistID):
-    # When the bot is done a cycle or whatever, write out the current playlistID to a text file.
-    f = open('playlistIDs', 'w')
-    f.write(playlistID + '\n')
-'''
 
 
 def bot_cycle(r, youtube):
     # Runs the bot's logic. Scans top posts for unadded posts, then adds them to the YT playlist.
     while True:
-        try:
-            playlistID = get_playlist_id()
-        except:
-            # If you cannot get the playlistID from the playlist ID file, leave the default.
-            playlistID = default_playlist_id
-        subreddit = r.get_subreddit(searchSubreddit)
+        playlist_id = default_playlist_id
+        subreddit = r.get_subreddit(search_subreddit)
 
         # Search depthLimit links and round them up if they're youtube
-        for link in subreddit.get_hot(limit=depthLimit):
+        for link in subreddit.get_hot(limit=depth_limit):
             url = link.url
 
             # Filter out non YT links, such as self-posts/announcements
-            isMatch = any(string in url for string in textToMatch)
-            if isMatch and not already_added(url):
+            is_match = any(string in url for string in text_to_match)
+            if is_match and not already_added(url):
 
                 # Strip the id from the link to use in YT API
-                videoID = extract_id(url)
+                video_id = extract_id(url)
 
-                if videoID is None:
+                if video_id is None:
                     print("=========")
                     print("Can not extract the id from {}".format(url))
                     print("=========")
@@ -151,14 +131,13 @@ def bot_cycle(r, youtube):
                     # Login to YT and add the linked video to the playlist
                     print("Adding {} to your playlist.".format(url))
                     try:
-                        add_to_yt_playlist(youtube, videoID, playlistID)
-                    except HttpError:
-                        print "Error adding video to Youtube playlist"
-                    try:
+                        add_to_yt_playlist(youtube, video_id, playlist_id)
                         add_link(url)
                     except IOError:
                         print "Problem adding video url to url list file"
-            if not isMatch:
+                    except HttpError:
+                        print "Problem finding playlist"
+            if not is_match:
                 # If it doesn't meet the url(either weird YT link or another site)
                 print("Not adding {}. Wrong form/site.".format(url))
         print("Cycled through top posts, all done.\n\n")
@@ -179,7 +158,8 @@ def extract_id(url):
             query = urlparse.parse_qs(url_parsed.query)
             video_id = query["v"][0]
             return video_id
-    except:
+    except HttpError:
+        print "Error retrieving the video id"
         return None
 
 
