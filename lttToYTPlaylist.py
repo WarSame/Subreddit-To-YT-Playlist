@@ -1,35 +1,24 @@
 #!/usr/bin/python
-#ListenToThis Subreddit To Youtube Playlist Bot
-#V 1.1
-#/u/BlueFireAt or /u/WarSame
-#This bot will repeatedly cycle through the top list of /r/listentothis, to a set depth
-#It will then take all top youtube links and add them to the Youtube playlist if they
-#Haven't been added already
-#Then it will sleep until it wants to cycle through the list again
+# ListenToThis Subreddit To Youtube Playlist Bot
+# V 1.1
+# /u/BlueFireAt or /u/WarSame
+# This bot will repeatedly cycle through the top list of /r/listentothis, to a set depth
+# It will then take all top youtube links and add them to the Youtube playlist if they
+# Haven't been added already
+# Then it will sleep until it wants to cycle through the list again
 
 
 import praw
 import time
-
-#YT Authentication
-import gdata.youtube
-import gdata.youtube.service
-
-yt_service = gdata.youtube.service.YouTubeService()
-yt_service.ssl = True
-
-
 import httplib2
 import os
 import sys
 import urlparse
-
-from apiclient.discovery import build
-from apiclient.errors import HttpError
+from googleapiclient.discovery import build
 from oauth2client.client import flow_from_clientsecrets
+from googleapiclient.errors import HttpError
 from oauth2client.file import Storage
 from oauth2client.tools import argparser, run_flow
-
 
 # The CLIENT_SECRETS_FILE variable specifies the name of a file that contains
 # the OAuth 2.0 information for this application, including its client_id and
@@ -67,147 +56,155 @@ YOUTUBE_READ_WRITE_SCOPE = "https://www.googleapis.com/auth/youtube"
 YOUTUBE_API_SERVICE_NAME = "youtube"
 YOUTUBE_API_VERSION = "v3"
 
-def get_authenticated_service():
-	flow = flow_from_clientsecrets(CLIENT_SECRETS_FILE,
-	  message=MISSING_CLIENT_SECRETS_MESSAGE,
-	  scope=YOUTUBE_READ_WRITE_SCOPE)
 
-	storage = Storage("%s-oauth2.json" % sys.argv[0])
-	credentials = storage.get()
+def get_authenticated_service(args):
+    flow = flow_from_clientsecrets(CLIENT_SECRETS_FILE,
+                                   scope=YOUTUBE_READ_WRITE_SCOPE,
+                                   message=MISSING_CLIENT_SECRETS_MESSAGE)
 
-	if credentials is None or credentials.invalid:
-	  flags = argparser.parse_args()
-	  credentials = run_flow(flow, storage, flags)
+    storage = Storage("%s-oauth2.json" % sys.argv[0])
+    credentials = storage.get()
 
-	return build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION,
-	  http=credentials.authorize(httplib2.Http()))
+    if credentials is None or credentials.invalid:
+        credentials = run_flow(flow, storage, args)
+
+    return build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION,
+                 http=credentials.authorize(httplib2.Http()))
 
 
-#User-defined variables
+# User-defined variables
 
-#The maximum the bot will search is the top [depthLimit] posts. Default is 25
-depthLimit=25
+# The maximum the bot will search is the top [depthLimit] posts. Default is 25
+depthLimit = 25
 
-#The subreddit it will search for videos. Default is /r/listentothis
+# The subreddit it will search for videos. Default is /r/listentothis
 searchSubreddit = "listentothis"
 
-#The text it will match. Default is *youtube.com/*. Can have more than one option.
-textToMatch = ["youtube.com/"]
+# The text it will match. Default is *youtube.com/*. Can have more than one option.
+textToMatch = ["youtube.com/", "youtu.be/"]
 
-#The playlist it will add to by ID.
-global defaultPlaylistID
-defaultPlaylistID  = 'PL0123Jmy2GdkAROYNrbti51KtYSohr-R0'
+# The playlist it will add to by ID.
+default_playlist_id = 'PL0123Jmy2GdkAROYNrbti51KtYSohr-R0'
 
-def addLink(text):
 
-	#When a link is first added to the youtube playlist, store the link in a local text file, "alreadyAdded".
-	f = open('alreadyAdded', 'a')
-	f.write(text + "\n")
+def add_link(text):
+    # When a link is first added to the youtube playlist, store the link in a local text file, "alreadyAdded".
+    f = open('alreadyAdded', 'a')
+    f.write(text + "\n")
 
-def alreadyAdded(text):
 
-	#If the link is in the local text file "alreadyAdded" return true. If not, false. Also check the file exists.	
-	try:
-		if text in open("alreadyAdded").read():
-			return True
-		else:
-			return False
-	except:
-		f = open('alreadyAdded', 'a')
-		return False
+def already_added(text):
+    # If the link is in the local text file "alreadyAdded" return true. If not, false. Also check the file exists.
+    try:
+        if text in open("alreadyAdded").read():
+            return True
+        else:
+            return False
+    except:
+        f = open('alreadyAdded', 'a')
+        return False
 
-def getPlaylistID():
 
-	#When the bot is starting up, obtain the current ID from a text file.
-	f = open('playlistIDs', 'r')
-	line = None
-	for line in f:
-		pass
-	return line
+def get_playlist_id():
+    # When the bot is starting up, obtain the current ID from a text file.
+    f = open('playlistIDs', 'r')
+    line = None
+    for line in f:
+        pass
+    return line
 
-def newPlaylistID():
 
-	#When the current playlist is full, create a new one and return it
-	return None
+'''
+def write_playlist_id(playlistID):
+    # When the bot is done a cycle or whatever, write out the current playlistID to a text file.
+    f = open('playlistIDs', 'w')
+    f.write(playlistID + '\n')
+'''
 
-def writePlaylistID(playlistID):
 
-	#When the bot is done a cycle or whatever, write out the current playlistID to a text file.
-	f = open('playlistIDs', 'w')
-	f.write(playlistID + '\n')
+def bot_cycle(r, youtube):
+    # Runs the bot's logic. Scans top posts for unadded posts, then adds them to the YT playlist.
+    while True:
+        try:
+            playlistID = get_playlist_id()
+        except:
+            # If you cannot get the playlistID from the playlist ID file, leave the default.
+            playlistID = default_playlist_id
+        subreddit = r.get_subreddit(searchSubreddit)
 
-def botCycle(r):
+        # Search depthLimit links and round them up if they're youtube
+        for link in subreddit.get_hot(limit=depthLimit):
+            url = link.url
 
-    #Runs the bot's logic. Scans top posts for unadded posts, then adds them to the YT playlist.
-	while True:
-		try:
-			playlistID = getPlaylistID()
-		except:
+            # Filter out non YT links, such as self-posts/announcements
+            isMatch = any(string in url for string in textToMatch)
+            if isMatch and not already_added(url):
 
-		#If you cannot get the playlistID from the playlist ID file, leave the default.
-			playlistID = defaultPlaylistID
-		subreddit = r.get_subreddit(searchSubreddit)
+                # Strip the id from the link to use in YT API
+                videoID = extract_id(url)
 
-		#Search depthLimit links and round them up if they're youtube
-		for link in subreddit.get_hot(limit=depthLimit):
-			url = link.url
+                if videoID is None:
+                    print("=========")
+                    print("Can not extract the id from {}".format(url))
+                    print("=========")
+                else:
+                    # Login to YT and add the linked video to the playlist
+                    print("Adding {} to your playlist.".format(url))
+                    try:
+                        add_to_yt_playlist(youtube, videoID, playlistID)
+                    except HttpError:
+                        print "Error adding video to Youtube playlist"
+                    try:
+                        add_link(url)
+                    except IOError:
+                        print "Problem adding video url to url list file"
+            if not isMatch:
+                # If it doesn't meet the url(either weird YT link or another site)
+                print("Not adding {}. Wrong form/site.".format(url))
+        print("Cycled through top posts, all done.\n\n")
+        # write_playlist_id(playlistID)
+        time.sleep(1800)
 
-			#Filter out non YT links, such as self-posts/announcements
-			isMatch = any(string in url for string in textToMatch)
-			if isMatch and not alreadyAdded(url):
 
-				#Strip the id from the link to use in YT API
-				videoID = extractId(url)
+def extract_id(url):
+    # Given a youtube URL, extracts the id for the video and returns it.
+    try:
+        url_parsed = urlparse.urlparse(url)
+        print "netloc", url_parsed.netloc
+        if url_parsed.netloc == "youtu.be":
+            # Get path of mobile video, remove the leading slash
+            print url_parsed.path[1:]
+            return url_parsed.path[1:]
+        else:
+            query = urlparse.parse_qs(url_parsed.query)
+            video_id = query["v"][0]
+            return video_id
+    except:
+        return None
 
-				if videoID is None:
-					print("=========")
-					print("Can not extract the id from {}".format(url))
-					print("=========")
-				else:
 
-					#Login to YT and add the linked video to the playlist
-					print("Adding {} to your playlist.".format(url))
-					addToYTPlaylist(youtube, videoID, playlistID)
+def add_to_yt_playlist(youtube, video_id, playlist_id):
+    # Given video and playlist, adds the video to the playlist
+    youtube.playlistItems().insert(
+        part="snippet",
+        body={
+            'snippet': {
+                'playlistId': playlist_id,
+                'resourceId': {
+                    'kind': 'youtube#video',
+                    'videoId': video_id
+                }
+                # 'position': 0
+            }
+        }
+    ).execute()
 
-					#print("Problem with getting the ID, or playlist ID.")
-					addLink(url)
-			if not isMatch:
 
-				#If it doesn't meet the url(either weird YT link or another site)
-				print("Not adding {}. Wrong form/site.".format(url))
-		print("Cycled through top posts, all done.\n\n")
-		writePlaylistID(playlistID)
-		time.sleep(1800)
+def main():
+    # Start youtube and reddit apis, and runs the bot.
+    youtube = get_authenticated_service(argparser.parse_args())
+    r = praw.Reddit(user_agent="LTT To YT Playlist v 1.1 /u/BlueFireAt")
+    bot_cycle(r, youtube)
 
-def extractId(url):
 
-	#Given a youtube URL, extracts the id for the video and returns it.
-	try:
-		url_data = urlparse.urlparse(url)
-		query = urlparse.parse_qs(url_data.query)
-		video = query["v"][0]
-		return video
-	except:
-		return None
-
-def addToYTPlaylist(youtube, videoID, playlistID):
-
-	#Given video and playlist, adds the video to the playlist
-	add_video_request=youtube.playlistItems().insert(
-		part="snippet",
-			body={
-			'snippet': {
-				'playlistId': playlistID, 
-				'resourceId': {
-					'kind': 'youtube#video',
-					'videoId': videoID
-					}
-					#'position': 0
-				}
-			}
-	).execute()
-
-#Start youtube and reddit apis, and runs the bot.
-youtube = get_authenticated_service()
-r = praw.Reddit(user_agent = "LTT To YT Playlist Bot v 1.1 /u/BlueFireAt")
-botCycle(r)
+main()
