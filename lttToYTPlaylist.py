@@ -13,7 +13,8 @@ import time
 import httplib2
 import os
 import sys
-import urlparse
+import urllib.parse
+import json
 from googleapiclient.discovery import build
 from oauth2client.client import flow_from_clientsecrets
 from googleapiclient.errors import HttpError
@@ -30,7 +31,7 @@ from oauth2client.tools import argparser, run_flow
 #   https://developers.google.com/youtube/v3/guides/authentication
 # For more information about the client_secrets.json file format, see:
 #   https://developers.google.com/api-client-library/python/guide/aaa_client_secrets
-CLIENT_SECRETS_FILE = "client_secrets.json"
+YOUTUBE_CLIENT_SECRETS_FILE = "youtube_client_secrets.json"
 
 # This variable defines a message to display if the CLIENT_SECRETS_FILE is
 # missing.
@@ -48,7 +49,7 @@ https://console.developers.google.com/
 For more information about the client_secrets.json file format, please visit:
 https://developers.google.com/api-client-library/python/guide/aaa_client_secrets
 """ % os.path.abspath(os.path.join(os.path.dirname(__file__),
-                                   CLIENT_SECRETS_FILE))
+                                   YOUTUBE_CLIENT_SECRETS_FILE))
 
 # This OAuth 2.0 access scope allows for full read/write access to the
 # authenticated user's account.
@@ -58,7 +59,7 @@ YOUTUBE_API_VERSION = "v3"
 
 
 def get_authenticated_service(args):
-    flow = flow_from_clientsecrets(CLIENT_SECRETS_FILE,
+    flow = flow_from_clientsecrets(YOUTUBE_CLIENT_SECRETS_FILE,
                                    scope=YOUTUBE_READ_WRITE_SCOPE,
                                    message=MISSING_CLIENT_SECRETS_MESSAGE)
 
@@ -75,7 +76,7 @@ def get_authenticated_service(args):
 # User-defined variables
 
 # The maximum the bot will search is the top [depthLimit] posts. Default is 25
-depth_limit = 25
+depth_limit = 5
 
 # The subreddit it will search for videos. Default is /r/listentothis
 search_subreddit = "listentothis"
@@ -85,7 +86,6 @@ text_to_match = ["youtube.com/", "youtu.be/"]
 
 # The playlist it will add to by ID.
 default_playlist_id = 'PL0123Jmy2GdkAROYNrbti51KtYSohr-R0'
-
 
 def add_link(text):
     # When a link is first added to the youtube playlist, store the link in a local text file, "alreadyAdded".
@@ -110,10 +110,10 @@ def bot_cycle(r, youtube):
     # Runs the bot's logic. Scans top posts for unadded posts, then adds them to the YT playlist.
     while True:
         playlist_id = default_playlist_id
-        subreddit = r.get_subreddit(search_subreddit)
+        subreddit = r.subreddit(search_subreddit)
 
         # Search depthLimit links and round them up if they're youtube
-        for link in subreddit.get_hot(limit=depth_limit):
+        for link in subreddit.hot(limit=depth_limit):
             url = link.url
 
             # Filter out non YT links, such as self-posts/announcements
@@ -134,9 +134,9 @@ def bot_cycle(r, youtube):
                         add_to_yt_playlist(youtube, video_id, playlist_id)
                         add_link(url)
                     except IOError:
-                        print "Problem adding video url to url list file"
+                        print("Problem adding video url to url list file.")
                     except HttpError:
-                        print "Problem finding playlist"
+                        print("Problem finding playlist.")
             if not is_match:
                 # If it doesn't meet the url(either weird YT link or another site)
                 print("Not adding {}. Wrong form/site.".format(url))
@@ -148,18 +148,17 @@ def bot_cycle(r, youtube):
 def extract_id(url):
     # Given a youtube URL, extracts the id for the video and returns it.
     try:
-        url_parsed = urlparse.urlparse(url)
-        print "netloc", url_parsed.netloc
+        url_parsed = urllib.parse.urlparse(url)
         if url_parsed.netloc == "youtu.be":
             # Get path of mobile video, remove the leading slash
-            print url_parsed.path[1:]
+            print("Video ID is " + url_parsed.path[1:])
             return url_parsed.path[1:]
         else:
-            query = urlparse.parse_qs(url_parsed.query)
+            query = urllib.parse.parse_qs(url_parsed.query)
             video_id = query["v"][0]
             return video_id
     except HttpError:
-        print "Error retrieving the video id"
+        print("Error retrieving the video id.")
         return None
 
 
@@ -174,16 +173,26 @@ def add_to_yt_playlist(youtube, video_id, playlist_id):
                     'kind': 'youtube#video',
                     'videoId': video_id
                 }
-                # 'position': 0
             }
         }
     ).execute()
 
 
+def obtain_praw_secrets():
+    praw_client_secrets_file = "praw_client_secrets.json"
+    praw_client_secrets = json.load(open(praw_client_secrets_file))
+    praw_client_id = praw_client_secrets["CLIENT_ID"]
+    praw_client_secret = praw_client_secrets["CLIENT_SECRET"]
+    return praw_client_id, praw_client_secret
+
+
 def main():
     # Start youtube and reddit apis, and runs the bot.
     youtube = get_authenticated_service(argparser.parse_args())
-    r = praw.Reddit(user_agent="LTT To YT Playlist v 1.1 /u/BlueFireAt")
+    praw_secrets = obtain_praw_secrets()
+    r = praw.Reddit(client_id=praw_secrets[0],
+                    client_secret=praw_secrets[1],
+                    user_agent="LTT To YT Playlist v 1.2 /u/BlueFireAt")
     bot_cycle(r, youtube)
 
 
