@@ -21,89 +21,63 @@ from googleapiclient.errors import HttpError
 from oauth2client.file import Storage
 from oauth2client.tools import argparser, run_flow
 
-# The CLIENT_SECRETS_FILE variable specifies the name of a file that contains
-# the OAuth 2.0 information for this application, including its client_id and
-# client_secret. You can acquire an OAuth 2.0 client ID and client secret from
-# the Google Developers Console at
-# https://console.developers.google.com/.
-# Please ensure that you have enabled the YouTube Data API for your project.
-# For more information about using OAuth2 to access the YouTube Data API, see:
-#   https://developers.google.com/youtube/v3/guides/authentication
-# For more information about the client_secrets.json file format, see:
-#   https://developers.google.com/api-client-library/python/guide/aaa_client_secrets
-YOUTUBE_CLIENT_SECRETS_FILE = "youtube_client_secrets.json"
-
-# This variable defines a message to display if the CLIENT_SECRETS_FILE is
-# missing.
-MISSING_CLIENT_SECRETS_MESSAGE = """
-WARNING: Please configure OAuth 2.0
-
-To make this sample run you will need to populate the client_secrets.json file
-found at:
-
-   %s
-
-with information from the Developers Console
-https://console.developers.google.com/
-
-For more information about the client_secrets.json file format, please visit:
-https://developers.google.com/api-client-library/python/guide/aaa_client_secrets
-""" % os.path.abspath(os.path.join(os.path.dirname(__file__),
-                                   YOUTUBE_CLIENT_SECRETS_FILE))
-
-# This OAuth 2.0 access scope allows for full read/write access to the
-# authenticated user's account.
-YOUTUBE_READ_WRITE_SCOPE = "https://www.googleapis.com/auth/youtube"
-YOUTUBE_API_SERVICE_NAME = "youtube"
-YOUTUBE_API_VERSION = "v3"
-
-
-def get_authenticated_service(args):
-    flow = flow_from_clientsecrets(YOUTUBE_CLIENT_SECRETS_FILE,
-                                   scope=YOUTUBE_READ_WRITE_SCOPE,
-                                   message=MISSING_CLIENT_SECRETS_MESSAGE)
-
-    storage = Storage("%s-oauth2.json" % sys.argv[0])
-    credentials = storage.get()
-
-    if credentials is None or credentials.invalid:
-        credentials = run_flow(flow, storage, args)
-
-    return build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION,
-                 http=credentials.authorize(httplib2.Http()))
-
 
 # User-defined variables
 
-# The maximum the bot will search is the top [depthLimit] posts. Default is 25
-depth_limit = 5
+# The maximum the bot will search is the top [depthLimit] posts
+depth_limit = 10
 
-# The subreddit it will search for videos. Default is /r/listentothis
+# The subreddit it will search for videos
 search_subreddit = "listentothis"
 
-# The text it will match. Default is *youtube.com/*. Can have more than one option.
+# The text it will match. Can have more than one option
 text_to_match = ["youtube.com/", "youtu.be/"]
 
-# The playlist it will add to by ID.
+# The playlist it will add to by ID
 default_playlist_id = 'PL0123Jmy2GdkAROYNrbti51KtYSohr-R0'
 
+# The text file it will search and store IDs with
+id_file_name = 'alreadyAdded'
+
+
 def add_link(text):
-    # When a link is first added to the youtube playlist, store the link in a local text file, "alreadyAdded".
-    f = open('alreadyAdded', 'a')
+    # When a link is first added to the youtube playlist, store the link in a local ID text file
+    f = open(id_file_name, 'a')
     f.write(text + "\n")
     return
 
 
 def already_added(link):
-    # If the link is in the local text file "alreadyAdded" return true. If not, false. Also check the file exists.
+    # If the link is in the local ID text file return true. If not, false. Also check the file exists.
     try:
-        if link in open("alreadyAdded", 'r').read():
+        if link in open(id_file_name, 'r').read():
             return True
         else:
             return False
     except IOError:
-        open('alreadyAdded', 'a')
+        open(id_file_name, 'a')
         return False
+
+
+def add_to_playlist(url, youtube, playlist_id):
+    # Strip the id from the link to use in YT API
+    video_id = extract_id(url)
+
+    if video_id is None:
+        print("=========")
+        print("Can not extract the id from {}".format(url))
+        print("=========")
+    else:
+        # Login to YT and add the linked video to the playlist
+        print("Adding {} to your playlist.".format(url))
+        try:
+            add_to_yt_playlist(youtube, video_id, playlist_id)
+            add_link(url)
+        except IOError:
+            print("Problem adding video url to url list file.")
+        except HttpError:
+            print("Problem finding playlist.")
+    return
 
 
 def bot_cycle(r, youtube):
@@ -119,27 +93,10 @@ def bot_cycle(r, youtube):
             # Filter out non YT links, such as self-posts/announcements
             is_match = any(string in url for string in text_to_match)
             if is_match and not already_added(url):
-
-                # Strip the id from the link to use in YT API
-                video_id = extract_id(url)
-
-                if video_id is None:
-                    print("=========")
-                    print("Can not extract the id from {}".format(url))
-                    print("=========")
-                else:
-                    # Login to YT and add the linked video to the playlist
-                    print("Adding {} to your playlist.".format(url))
-                    try:
-                        add_to_yt_playlist(youtube, video_id, playlist_id)
-                        add_link(url)
-                    except IOError:
-                        print("Problem adding video url to url list file.")
-                    except HttpError:
-                        print("Problem finding playlist.")
+                add_to_playlist(url, youtube, playlist_id)
             if not is_match:
-                # If it doesn't meet the url(either weird YT link or another site)
                 print("Not adding {}. Wrong form/site.".format(url))
+
         print("Cycled through top posts, all done.\n\n")
         # write_playlist_id(playlistID)
         time.sleep(1800)
@@ -178,7 +135,26 @@ def add_to_yt_playlist(youtube, video_id, playlist_id):
     ).execute()
 
 
+def get_authenticated_service(args):
+    youtube_client_secrets_file = "youtube_client_secrets.json"
+    youtube_read_write_scope = "https://www.googleapis.com/auth/youtube"
+    youtube_api_service_name = "youtube"
+    youtube_api_version = "v3"
+    flow = flow_from_clientsecrets(youtube_client_secrets_file,
+                                   scope=youtube_read_write_scope)
+
+    storage = Storage("%s-oauth2.json" % sys.argv[0])
+    credentials = storage.get()
+
+    if credentials is None or credentials.invalid:
+        credentials = run_flow(flow, storage, args)
+
+    return build(youtube_api_service_name, youtube_api_version,
+                 http=credentials.authorize(httplib2.Http()))
+
+
 def obtain_praw_secrets():
+    # Load PRAW secrets from file
     praw_client_secrets_file = "praw_client_secrets.json"
     praw_client_secrets = json.load(open(praw_client_secrets_file))
     praw_client_id = praw_client_secrets["CLIENT_ID"]
