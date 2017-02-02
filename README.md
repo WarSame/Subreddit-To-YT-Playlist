@@ -1,4 +1,4 @@
-lttToYTPlaylist
+Subreddit-To-YT-Playlist
 ===============
 
-Takes the top hot posts from [/r/listentothis](http://www.reddit.com/r/listentothis) and puts them into the [ListenToThis playlist](https://www.youtube.com/playlist?list=PL0123Jmy2GdkAROYNrbti51KtYSohr-R0) on YT if they have yet to be added.
+Takes the hot posts from a subreddit and puts them into a specified playlist on YouTube.
