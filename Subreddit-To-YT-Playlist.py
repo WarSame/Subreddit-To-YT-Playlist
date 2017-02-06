@@ -1,7 +1,5 @@
-#!/usr/bin/python
-# ListenToThis Subreddit To Youtube Playlist Bot
+# Subreddit To Youtube Playlist Bot
 # V 1.1
-# /u/BlueFireAt or /u/WarSame
 # This bot will repeatedly cycle through the top list of a subreddit, to a set depth
 # It will then take all top youtube links and add them to the Youtube playlist if they
 # Haven't been added already
